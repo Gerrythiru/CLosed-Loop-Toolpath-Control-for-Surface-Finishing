@@ -1,9 +1,128 @@
-# Closed_Loop_ToolPath
+# Closed-Loop Toolpath Control for Surface Finishing
 
-MuJoCo scene: a flat work plate and a UFactory Lite 6 arm on one table, arranged
-so the arm's end-effector can contact every point of the plate.
+A MuJoCo simulation of a robot arm that **keeps its surface-finishing toolpath on
+target while the workpiece moves under it**. A UFactory Lite 6 arm rasters a tool
+across a 30 × 30 cm aluminum plate. The plate is not clamped and rotates
+unpredictably during the pass. An emulated OptiTrack motion-capture rig tracks
+the plate, and the planned path is re-projected through that live pose estimate
+on every control tick.
 
-## Files
+<p align="center">
+  <img src="toolpath_trace.gif" width="560" alt="Lite 6 arm tracing a serpentine toolpath across the plate">
+  <br><em>The arm tracing its serpentine (boustrophedon) raster. The red trail is the executed tool-tip path.</em>
+</p>
+
+## Why
+
+Robotic sanding, polishing and deburring usually assume the part is rigidly
+fixtured, so a pre-planned path is correct for the whole pass. When the part
+shifts because of loose fixturing, compliant supports or contact forces, an
+open-loop path drifts off the surface it was meant to cover. This project builds
+the full sense → estimate → correct loop in simulation and measures how much of
+that error closing the loop removes. It uses realistic sensor imperfections,
+including noise, latency, occlusion, marker swaps and ghost detections.
+
+It is a MuJoCo prototype of the ideas in
+[`Proposal_A_Detailed_Plan.md`](Proposal_A_Detailed_Plan.md), a Master's thesis
+plan for in-pass, geometry-aware toolpath replanning on a free-floating workpiece.
+
+## How it works
+
+```mermaid
+flowchart LR
+    D["Plate disturbance<br/>stepped ±1.5° yaw, PD torque<br/>on a real 3 kg free body"] --> P(("Plate<br/>true pose"))
+    P --> M["Emulated mocap rig<br/>3 × PrimeX 22, 4 markers, 240 Hz<br/>noise · latency · occlusion · swaps · ghosts"]
+    M --> F["Pose estimate<br/>triangulation + robust rigid fit<br/>outlier rejection + temporal gate"]
+    F --> C["Consumer guards<br/>hold through dropout<br/>rate limiter"]
+    C --> R["Re-project path<br/>plate-local plan → world"]
+    R --> K["6-DOF DLS IK<br/>+ look-ahead feed-forward"]
+    K --> A["Lite 6 position actuators"]
+    A -->|tool contact| P
+```
+
+The project was built in phases, and each phase has its own verification script:
+
+| Phase | What | Key script |
+|---|---|---|
+| Scene | Table, free-body plate, Lite 6 with probe tool; full-plate reach verified | `check_reach.py` |
+| Toolpath | Constant-feedrate serpentine raster, IK + feed-forward tracking | `trace_toolpath.py` |
+| Mocap rig | 3 cameras placed outside the robot's swept volume and keep-out zone | `check_mocap_rig.py` |
+| D: sensing | Noise, occlusion, bias/drift, label swaps, ghosts → robust pose fit | `mocap_emulator.py` |
+| E: disturbance | Scripted stepped-yaw motion of the plate | `plate_disturbance.py` |
+| F: closed loop | Path re-projected through the live estimate; open vs. closed vs. oracle | `closed_loop_demo.py` |
+
+## Results
+
+Each mode runs the same 23 s toolpath under the same disturbance (seed 2). The
+error is measured against the plate's **true** pose, not the estimate:
+
+| Mode | What drives the path | Mean contact error | Max |
+|---|---|---|---|
+| Open loop | Nominal plate pose, no correction | 5.39 mm | 14.5 mm |
+| **Closed loop** | **Live mocap estimate** | **2.94 mm** | 19.2 mm* |
+| Oracle | Perfect, zero-latency ground truth | 2.80 mm | 7.2 mm |
+
+Closing the loop **cuts mean contact error by about 45%**, to within about 0.15 mm
+of the perfect-sensor oracle. The error that remains, roughly 2.8 mm, matches the
+arm's own tracking lag on a *static* plate. That makes it the arm's precision
+limit, not a sensing problem.
+
+\*The closed-loop maximum comes from one short transient near t ≈ 21.7 s, when a
+bad pose estimate briefly got past the filters (visible in both panels below).
+The other maxima in this mode stay at the oracle level.
+
+<p align="center">
+  <img src="closed_loop_result.png" width="780" alt="Contact error and plate yaw for open, closed and oracle modes">
+  <br><em>Top: tool-to-plate contact error for each mode. Bottom: true plate yaw vs. the held mocap estimate.</em>
+</p>
+
+With a different disturbance schedule (seed 7), the plate drifts about 7° in one
+direction. Open-loop error grows past 20 mm, while closed-loop stays with the oracle:
+
+<p align="center">
+  <img src="closed_loop_result_Sd7.png" width="780" alt="Closed-loop result with disturbance seed 7">
+</p>
+
+## Gallery
+
+<table>
+  <tr>
+    <td align="center"><img src="mocap_rig_overview.png" width="400"><br><em>Scene with the mocap rig: overhead and two oblique cameras on trusses</em></td>
+    <td align="center"><img src="scene_view1.png" width="400"><br><em>Lite 6 arm and work plate on the table</em></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="mocap_view_cam_oblique_w.png" width="400"><br><em>View from the west oblique mocap camera</em></td>
+    <td align="center"><img src="mocap_view_cam_overhead.png" width="400"><br><em>View from the overhead mocap camera</em></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="toolpath_result.png" width="400"><br><em>Commanded vs. actual tool-tip path on a static plate</em></td>
+    <td align="center"><img src="mocap_demo_result.png" width="400"><br><em>Mocap estimate vs. true yaw, marker visibility and pose error</em></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="disturbance_check.png" width="600"><br><em>Scripted stepped-yaw disturbance: a smooth staircase with no X/Y drift</em></td>
+  </tr>
+</table>
+
+## Quick start
+
+Requires Python 3 with `mujoco`, `numpy`, `matplotlib` and `Pillow`:
+
+```bash
+pip install mujoco numpy matplotlib pillow
+
+python check_reach.py                  # verify the arm can reach the whole plate
+python trace_toolpath.py --view        # watch the toolpath on a static plate
+python closed_loop_demo.py             # run open / closed / oracle and write the plots
+python closed_loop_demo.py --view      # watch the closed loop live
+```
+
+In the live viewer, press `]` / `[` to cycle through the mocap camera views.
+
+---
+
+# Technical details
+
+### Files
 
 | File | Purpose |
 |------|---------|
@@ -21,7 +140,7 @@ so the arm's end-effector can contact every point of the plate.
 | `check_outlier_rejection.py` | Stress test proving the mocap fit's residual check catches a corrupted marker. |
 | `closed_loop_demo.py` | Phase F: re-projects the toolpath through the live mocap estimate; compares open/closed/oracle tracking. |
 
-## Scene layout (metres, world frame)
+### Scene layout (metres, world frame)
 
 - **Table**: 1.0 (x) x 0.7 (y) box top, top surface at **z = 0.75**, four legs to the floor.
 - **Work plate**: **0.30 x 0.30 m**, 12 mm thick, matte aluminum finish, **3 kg**
@@ -35,7 +154,7 @@ so the arm's end-effector can contact every point of the plate.
 - **Lite 6**: base mounted on the table at `(-0.30, 0, 0.75)`, facing +x toward the
   plate. Nearest plate edge is ~0.09 m clear of the base; far corners ~0.41 m away.
 
-## Changes to `ufactory_lite6/lite6.xml` vs. the stock MuJoCo Menagerie model
+### Changes to `ufactory_lite6/lite6.xml` vs. the stock MuJoCo Menagerie model
 
 - `link_base` given `pos="-0.30 0 0.75"` to mount it on the table.
 - Asset dirs flattened (`assets/visual` -> `visual`, `assets/collision` -> `collision`)
@@ -43,7 +162,7 @@ so the arm's end-effector can contact every point of the plate.
 - Added a `tool` body under `link6`: a short probe shaft + red spherical tip with a
   `tcp` site at the contact point, for tool-path work.
 
-## Verify reach
+### Verify reach
 
 ```
 python check_reach.py
@@ -51,7 +170,7 @@ python check_reach.py
 
 Expected: `RESULT: PLATE FULLY REACHABLE` (0 unreachable targets over the 9x9 grid).
 
-## Tool-path tracing demo
+### Tool-path tracing demo
 
 ```
 python trace_toolpath.py           # headless: writes the GIF + result plot
@@ -83,7 +202,7 @@ Outputs:
 Typical result: **~2.5 mm mean** TCP tracking error on the straight passes,
 peaking ~7 mm at the sharp 180 deg reversals (no corner deceleration).
 
-## Emulated mocap rig
+### Emulated mocap rig
 
 To capture the plate's position/orientation while it moves unpredictably during a
 toolpath, the scene includes an emulated **OptiTrack PrimeX 22** marker-based mocap
@@ -166,7 +285,7 @@ smoothly with no overshoot, and that the plate stays resting on the table with
 zero X/Y drift throughout; plots the yaw staircase and translation drift
 (`disturbance_check.png`).
 
-## Closed-loop toolpath correction (phase F)
+### Closed-loop toolpath correction (phase F)
 
 ```
 python closed_loop_demo.py                     # headless: writes CSV/plot for all 3 modes
@@ -194,16 +313,19 @@ plate-start frames, as yaw angle) and `closed_loop_result.png`.
 
 | Mode | Mean contact error | Max |
 |---|---|---|
-| open | 6.46 mm | 17.8 mm |
-| **closed** | **2.71 mm** | 7.1 mm |
-| oracle | 2.77 mm | 7.1 mm |
+| open | 5.39 mm | 14.5 mm |
+| **closed** | **2.94 mm** | 19.2 mm (one brief transient, t ≈ 21.7 s) |
+| oracle | 2.80 mm | 7.2 mm |
 
-**Closing the loop now cuts mean contact error by 58%** and lands right at the
+(From the committed `closed_loop_log.csv`, disturbance seed 2. An earlier run
+recorded 6.46 / 2.71 / 2.77 mm mean.)
+
+**Closing the loop cuts mean contact error by ~45%** and lands close to the
 oracle (perfect-sensor) ceiling — a much clearer result than the ~11%
 improvement seen under the old continuous-jitter disturbance (v1), where the
 motion itself outran the arm's control bandwidth regardless of sensing
 quality. With the gentler v2 stepped motion, the arm can actually keep up, and
-correction recovers essentially all of the achievable improvement; the ~2.7 mm
+correction recovers almost all of the achievable improvement; the ~2.8 mm
 that's left over matches the arm's own baseline IK/actuator tracking lag on a
 *static* plate — i.e. it's the arm's inherent precision limit, not the plate
 motion or the mocap chain. See `mocap_rig_spec.md`'s "Phase F" section for
