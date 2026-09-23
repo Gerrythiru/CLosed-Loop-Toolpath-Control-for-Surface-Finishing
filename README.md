@@ -2,7 +2,7 @@
 
 A MuJoCo simulation of a robot arm that **keeps its surface-finishing toolpath on
 target while the workpiece moves under it**. A UFactory Lite 6 arm rasters a tool
-across a 30 × 30 cm aluminum plate. The plate is not clamped and rotates
+across a 30 × 30 cm aluminum plate. The plate is not clamped and drifts
 unpredictably during the pass. An emulated OptiTrack motion-capture rig tracks
 the plate, and the planned path is re-projected through that live pose estimate
 on every control tick.
