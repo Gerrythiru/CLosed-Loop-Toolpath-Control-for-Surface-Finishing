@@ -1,0 +1,111 @@
+<mujoco model="closed_loop_toolpath_scene">
+  <include file="ufactory_lite6/lite6.xml"/>
+
+  <compiler angle="radian"/>
+  <option integrator="implicitfast"/>
+
+  <statistic center="0 0 0.85" extent="1.1"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="140" elevation="-25" offwidth="1280" offheight="720"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <material name="table" rgba="0.62 0.45 0.30 1"/>
+    <material name="plate" rgba="0.68 0.69 0.71 1" specular="0.15" shininess="0.05"/>
+    <material name="marker" rgba="0.85 0.05 0.05 1" specular="0.9" shininess="0.8"/>
+    <material name="truss" rgba="0.15 0.16 0.18 1" specular="0.3" shininess="0.2"/>
+    <material name="camhousing" rgba="0.85 0.35 0.05 1" specular="0.4" shininess="0.3"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 2.2" dir="0 0 -1" directional="true"/>
+
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+
+    <!-- Table: top surface at z = 0.75 m -->
+    <body name="table" pos="0 0 0">
+      <geom name="table_top" type="box" pos="0 0 0.725" size="0.50 0.35 0.025" material="table"/>
+      <geom name="leg_px_py" type="cylinder" pos="0.45 0.30 0.35" size="0.03 0.35" material="table"/>
+      <geom name="leg_px_ny" type="cylinder" pos="0.45 -0.30 0.35" size="0.03 0.35" material="table"/>
+      <geom name="leg_nx_py" type="cylinder" pos="-0.45 0.30 0.35" size="0.03 0.35" material="table"/>
+      <geom name="leg_nx_ny" type="cylinder" pos="-0.45 -0.30 0.35" size="0.03 0.35" material="table"/>
+    </body>
+
+    <!-- Flat work plate: 0.30 m x 0.30 m, 12 mm thick, resting on the table.
+         Centered at x = -0.03 -> spans x in [-0.18, 0.12], y in [-0.15, 0.15].
+         Near edge sits 0.09 m clear of the arm base; far corners ~0.41 m from the
+         base, inside the Lite 6 workspace for the edge-mounted base at x = -0.30. -->
+    <!-- Free body (real mass/inertia, contact-reactive): phase E (v2) drives it
+         with applied torque (data.xfrc_applied) to script discrete yaw steps --
+         see plate_disturbance.py. Undriven, gravity+contact just let it rest on
+         the table, so check_reach.py / trace_toolpath.py are unaffected (they
+         plan relative to this body's nominal pos/quat, not its live state). -->
+    <body name="plate" pos="-0.03 0 0.756">
+      <freejoint/>
+      <!-- solref/solimp softened from MuJoCo's defaults: the 4 simultaneous
+           corner contacts of a flat box resting on a flat table are a classic
+           redundant/over-constrained case, and with the default (stiffer)
+           contact plus the implicitfast integrator, applied yaw torque was
+           almost entirely absorbed as spurious numerical damping (~1 deg
+           of rotation for 100 N*m over 1.5s, verified with friction removed
+           entirely via condim=1, so it was never a friction effect) below
+           ~100-150 N*m, and caused the contact solver to fail outright
+           (launching/tunneling) above that -- no usable middle ground. This
+           softer contact gives a clean, linear, stable torque response
+           instead; see plate_disturbance.py for the calibrated gains. -->
+      <geom name="plate_geom" type="box" size="0.15 0.15 0.006" material="plate" mass="3"
+        solref="0.05 1" solimp="0.9 0.95 0.01 0.5 2"/>
+
+      <!-- Mocap markers: 9.5 mm dia, flush on the top surface, inset 10 mm from each
+           edge (plate half-extent 0.15 m -> centers at local +/-0.14). Modeled as a
+           thin flush disc rather than a marker-on-post. Naming is relative to the
+           arm: local +x is the far/distal edge (away from the arm base), -x is the
+           near/proximal edge; +y/-y are left/right. See mocap_rig_spec.md. -->
+      <site name="mk_front_left"  pos=" 0.14  0.14 0.006" size="0.001"/>
+      <site name="mk_front_right" pos=" 0.14 -0.14 0.006" size="0.001"/>
+      <site name="mk_back_left"   pos="-0.14  0.14 0.006" size="0.001"/>
+      <site name="mk_back_right"  pos="-0.14 -0.14 0.006" size="0.001"/>
+      <geom name="mk_front_left_geom"  type="cylinder" size="0.00475 0.0005" pos=" 0.14  0.14 0.0065"
+        material="marker" contype="0" conaffinity="0" group="2"/>
+      <geom name="mk_front_right_geom" type="cylinder" size="0.00475 0.0005" pos=" 0.14 -0.14 0.0065"
+        material="marker" contype="0" conaffinity="0" group="2"/>
+      <geom name="mk_back_left_geom"   type="cylinder" size="0.00475 0.0005" pos="-0.14  0.14 0.0065"
+        material="marker" contype="0" conaffinity="0" group="2"/>
+      <geom name="mk_back_right_geom"  type="cylinder" size="0.00475 0.0005" pos="-0.14 -0.14 0.0065"
+        material="marker" contype="0" conaffinity="0" group="2"/>
+    </body>
+
+    <!-- Emulated OptiTrack PrimeX 22 mocap rig: 1 overhead + 2 oblique cameras on
+         static truss geometry (visual only, no joints). See mocap_rig_spec.md for
+         the keep-out math and coverage rationale behind these poses. -->
+    <body name="mocap_rig" pos="0 0 0">
+      <geom name="truss_overhead" type="box" pos="0 0 2.08" size="0.03 1.0 0.03" material="truss"/>
+      <geom name="truss_pole_w" type="cylinder" pos="-1.00 -0.90 0.70" size="0.03 0.70" material="truss"/>
+      <geom name="truss_pole_e" type="cylinder" pos="0.65 0.95 0.70" size="0.03 0.70" material="truss"/>
+
+      <camera name="cam_overhead" pos="0 0 2.00" fovy="47"
+        xyaxes="0.99906 0 -0.04344  0 1 0"/>
+      <camera name="cam_oblique_w" pos="-1.00 -0.90 1.60" fovy="47"
+        xyaxes="0.7072 -0.7072 0  0.3590 0.3590 0.8615"/>
+      <camera name="cam_oblique_e" pos="0.65 0.95 1.60" fovy="47"
+        xyaxes="-0.8051 0.5932 0  -0.3182 -0.4319 0.8439"/>
+
+      <!-- small housings purely so the sensor nodes are visible in overview renders.
+           Offset ~3 cm behind each camera's optical center (away from its aim point)
+           so a camera never renders the inside of its own housing. -->
+      <geom name="cam_overhead_housing" type="box" pos="0.001 0 2.03" size="0.03 0.03 0.02"
+        material="camhousing" contype="0" conaffinity="0" group="4"/>
+      <geom name="cam_oblique_w_housing" type="box" pos="-1.018 -0.918 1.615" size="0.03 0.03 0.02"
+        material="camhousing" contype="0" conaffinity="0" group="4"/>
+      <geom name="cam_oblique_e_housing" type="box" pos="0.665 0.970 1.616" size="0.03 0.03 0.02"
+        material="camhousing" contype="0" conaffinity="0" group="4"/>
+    </body>
+  </worldbody>
+</mujoco>
