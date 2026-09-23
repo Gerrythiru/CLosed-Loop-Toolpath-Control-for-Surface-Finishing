@@ -9,7 +9,7 @@ on every control tick.
 
 <p align="center">
   <img src="toolpath_trace.gif" width="560" alt="Lite 6 arm tracing a serpentine toolpath across the plate">
-  <br><em>The arm tracing its serpentine (boustrophedon) raster. The red trail is the executed tool-tip path.</em>
+  <br><em>The arm tracing an ordered toolpath on the plate. The red trail is the executed tool-tip path.</em>
 </p>
 
 ## Why
