@@ -22,9 +22,6 @@ the full sense → estimate → correct loop in simulation and measures how much
 that error closing the loop removes. It uses realistic sensor imperfections,
 including noise, latency, occlusion, marker swaps and ghost detections.
 
-It is a MuJoCo prototype of the ideas in
-[`Proposal_A_Detailed_Plan.md`](Proposal_A_Detailed_Plan.md), a Master's thesis
-plan for in-pass, geometry-aware toolpath replanning on a free-floating workpiece.
 
 ## How it works
 
