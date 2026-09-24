@@ -37,16 +37,16 @@ flowchart LR
     A -->|tool contact| P
 ```
 
-The project was built in phases, and each phase has its own verification script:
+The project was done in 6 main steps, and each step has its own verification script:
 
 | Phase | What | Key script |
 |---|---|---|
-| Scene | Table, free-body plate, Lite 6 with probe tool; full-plate reach verified | `check_reach.py` |
-| Toolpath | Constant-feedrate serpentine raster, IK + feed-forward tracking | `trace_toolpath.py` |
-| Mocap rig | 3 cameras placed outside the robot's swept volume and keep-out zone | `check_mocap_rig.py` |
-| D: sensing | Noise, occlusion, bias/drift, label swaps, ghosts → robust pose fit | `mocap_emulator.py` |
-| E: disturbance | Scripted stepped-yaw motion of the plate | `plate_disturbance.py` |
-| F: closed loop | Path re-projected through the live estimate; open vs. closed vs. oracle | `closed_loop_demo.py` |
+| 1. Scene | Table, free-body plate, Lite 6 with probe tool; full-plate reach verified | `check_reach.py` |
+| 2. Toolpath | Constant-feedrate serpentine raster, IK + feed-forward tracking | `trace_toolpath.py` |
+| 3. Mocap rig | 3 cameras placed outside the robot's swept volume and keep-out zone | `check_mocap_rig.py` |
+| 4. sensing | Noise, occlusion, bias/drift, label swaps, ghosts → robust pose fit | `mocap_emulator.py` |
+| 5. disturbance | Scripted stepped-yaw motion of the plate | `plate_disturbance.py` |
+| 6. closed loop | Path re-projected through the live estimate; open vs. closed vs. oracle | `closed_loop_demo.py` |
 
 ## Results
 
